@@ -28,13 +28,16 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 func (r *userRepositoryImpl) Save(u User, tx *gorm.DB) (User, error) {
-	// Isi timestamp secara otomatis sebelum disimpan ke database
 	now := time.Now().Unix()
 	u.CreatedAt = now
 	u.UpdatedAt = now
 
-	// GORM otomatis menjalankan: INSERT INTO users (...) VALUES (...);
-	err := r.db.Create(&u).Error
+	db := r.db
+	if tx != nil {
+		db = tx 
+	}
+
+	err := db.Create(&u).Error
 	if err != nil {
 		return User{}, err
 	}
