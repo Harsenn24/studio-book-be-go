@@ -9,24 +9,23 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken string `json:"accessToken"` 
+	AccessToken string `json:"accessToken"`
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"` 
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 	Name     string `json:"name" binding:"required"`
 }
 
 type RegisterResponse struct {
-	Message string `json:"message"` 
+	Message string `json:"message"`
 }
 
 type CheckUserRequest struct {
-	Email string `json:"email" binding:"required,email"` 
-	Role  string `json:"role" binding:"required"`
+	Email string `json:"email" binding:"required,email"`
 }
 
 type CheckUserResponse struct {
-	Message string `json:"message"` 
+	Message string      `json:"message"`
 }

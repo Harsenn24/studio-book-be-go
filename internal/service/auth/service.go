@@ -18,7 +18,7 @@ import (
 type AuthService interface {
 	Login(ctx context.Context, input LoginRequest, role string) (LoginResponse, error)
 	Register(ctx context.Context, input RegisterRequest, role string) (RegisterResponse, error)
-	CheckUser(ctx context.Context, input CheckUserRequest) (CheckUserResponse, error)
+	CheckUser(ctx context.Context, input CheckUserRequest, role string) (CheckUserResponse, error)
 }
 
 type authServiceImpl struct {
@@ -42,10 +42,10 @@ func NewAuthService(
 	}
 }
 
-func (s *authServiceImpl) CheckUser(ctx context.Context, input CheckUserRequest) (CheckUserResponse, error) {
+func (s *authServiceImpl) CheckUser(ctx context.Context, input CheckUserRequest, role string) (CheckUserResponse, error) {
 	filterFindOneBy := user.User{
 		Email: input.Email,
-		Role:  input.Role,
+		Role:  role,
 	}
 
 	checkUser, err := s.userRepo.FindOneBy(ctx, filterFindOneBy)
@@ -66,7 +66,7 @@ func (s *authServiceImpl) CheckUser(ctx context.Context, input CheckUserRequest)
 		return CheckUserResponse{}, errors.New("check_user_failed [email_logs_limit]")
 	}
 
-	generateToken, err := helper.GenerateToken(checkUser.UUID, checkUser.Email, input.Role)
+	generateToken, err := helper.GenerateToken(checkUser.UUID, checkUser.Email, role)
 	if err != nil {
 		return CheckUserResponse{}, errors.New("check_user_failed [generate_token]")
 	}
@@ -78,7 +78,7 @@ func (s *authServiceImpl) CheckUser(ctx context.Context, input CheckUserRequest)
 
 	payloadEmail := map[string]interface{}{
 		"name": checkUser.Name,
-		"link": fmt.Sprintf("%s/verify/%s/%s?token=%s", baseURL, input.Role, checkUser.UUID, generateToken),
+		"link": fmt.Sprintf("%s/verify/%s/%s?token=%s", baseURL, role, checkUser.UUID, generateToken),
 	}
 
 	sendEmailHelper := helper.NewSendEmailHelper(s.emailLoggerRepo, s.db)
