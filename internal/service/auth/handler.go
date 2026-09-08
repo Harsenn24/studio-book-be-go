@@ -63,6 +63,7 @@ func (h *AuthHandler) CheckUserHandler(c *gin.Context) {
 		helper.SendError(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	
 
 	response, err := h.authService.CheckUser(c.Request.Context(), input)
 	if err != nil {
