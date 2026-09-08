@@ -25,7 +25,14 @@ func (r *emailLoggerRepositoryImpl) Save(u EmailLogger, tx *gorm.DB) (EmailLogge
 	u.CreatedAt = now
 	u.UpdatedAt = now
 
-	err := r.db.Create(&u).Error
+	// 1. Pilih DB yang akan digunakan
+	db := r.db
+	if tx != nil {
+		db = tx // Gunakan transaksi jika ada
+	}
+
+	// 2. Gunakan 'db' untuk Create
+	err := db.Create(&u).Error
 	if err != nil {
 		return EmailLogger{}, err
 	}

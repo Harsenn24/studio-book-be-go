@@ -3,6 +3,8 @@ package helper
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -15,6 +17,8 @@ import (
 	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"
 )
+
+var templatesFS embed.FS
 
 type EmailResult struct {
 	MessageID string
@@ -36,7 +40,7 @@ func NewSendEmailHelper(emailLoggerRepo emailLogger.EmailLoggerRepository, db *g
 		viewPath:        "./views",
 	}
 }
-	
+
 func (h *EmailHelper) SendEmail(
 	ctx context.Context,
 	email string,
@@ -63,6 +67,8 @@ func (h *EmailHelper) SendEmail(
 		os.Getenv("PASS_EMAIL"),
 	)
 
+	dialer.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+
 	m := gomail.NewMessage()
 	m.SetHeader("From", fmt.Sprintf("%s <%s>", os.Getenv("SENDER_EMAIL_NAME"), os.Getenv("SENDER_EMAIL")))
 	m.SetHeader("To", email)
@@ -87,26 +93,29 @@ func (h *EmailHelper) SendEmail(
 	payloadData := emailLogger.EmailLogger{
 		UserID:    userID,
 		Type:      templateName,
-		MetaData:  &rawMetadata,
+		Metadata:  &rawMetadata,
 		CreatedAt: time.Now().Unix(),
 		UpdatedAt: time.Now().Unix(),
 		Email:     email,
 	}
 
-	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		_, err := h.emailLoggerRepo.Save(payloadData, tx)
-		return err
-	})
-
+	_, err = h.emailLoggerRepo.Save(payloadData, h.db.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to log email: %w", err)
 	}
+
 
 	return result, nil
 }
 
 func (h *EmailHelper) renderTemplate(templateName string, data map[string]interface{}) (string, error) {
-	tmplPath := filepath.Join(h.viewPath, templateName+".html")
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Buat path absolut dari root proyek
+	tmplPath := filepath.Join(wd, "views", templateName+".hbs")
 
 	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
