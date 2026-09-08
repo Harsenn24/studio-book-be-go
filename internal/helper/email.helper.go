@@ -57,7 +57,7 @@ func (h *EmailHelper) SendEmail(
 	}
 
 	dialer := gomail.NewDialer(
-		os.Getenv("SERVICE_EMAIL_HOST"),
+		os.Getenv("SERVICE_EMAIL"),
 		port,
 		os.Getenv("SENDER_EMAIL"),
 		os.Getenv("PASS_EMAIL"),
