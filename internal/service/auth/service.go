@@ -218,100 +218,84 @@ func (s *authServiceImpl) Login(ctx context.Context, input LoginRequest, role st
 }
 
 func (s *authServiceImpl) Register(ctx context.Context, input RegisterRequest, role string) (RegisterResponse, error) {
-	filterFindOneByEmailAndRole := user.User{
-		Email: input.Email,
-		Role:  role,
+	// 1. Cek Email & Role
+	checkUserByEmail, errEmail := s.userRepo.FindOneBy(ctx, user.User{Email: input.Email, Role: role})
+	if errEmail == nil {
+		// Jika email sudah terdaftar DAN sudah verifikasi
+		if checkUserByEmail.EmailVerifiedAt != nil {
+			return RegisterResponse{}, errors.New("register_failed [email_already_registered]")
+		}
+
+		// Jika email sudah ada tapi belum verifikasi, kirim ulang email
+		resendEmailHelper := helper.NewResendEmailHelper(s.emailLoggerRepo, s.db)
+		resultResendEmail, err := resendEmailHelper.ReSendEmail(ctx, checkUserByEmail, input.Email, role)
+		if err != nil || !resultResendEmail.Status {
+			return RegisterResponse{}, errors.New("register_failed [resend_email]")
+		}
+
+		return RegisterResponse{Message: "Resend verification email success"}, nil
 	}
 
-	// check email
-	checkUserByEmail, err := s.userRepo.FindOneBy(ctx, filterFindOneByEmailAndRole)
+	// 2. Cek Name (jika email belum terdaftar)
+	checkUserByName, errName := s.userRepo.FindOneBy(ctx, user.User{Name: input.Name})
+	if errName == nil && checkUserByName.EmailVerifiedAt != nil {
+		return RegisterResponse{}, errors.New("register_failed [name_already_registered]")
+	}
+
+	// 3. Hash Password & Siapkan Payload
+	hashPassword, err := helper.HashPassword(input.Password)
 	if err != nil {
-
-		filterFindOneByName := user.User{
-			Name: input.Name,
-		}
-
-		hashPassword, err := helper.HashPassword(input.Password)
-		if err != nil {
-			return RegisterResponse{}, errors.New("hash password failed")
-		}
-
-		payloadNewUser := user.User{
-			UUID:     uuid.New().String(),
-			Name:     input.Name,
-			Email:    input.Email,
-			Password: hashPassword,
-			Role:     role,
-		}
-
-		checkUserByName, errByName := s.userRepo.FindOneBy(ctx, filterFindOneByName)
-		if errByName == nil && checkUserByName.EmailVerifiedAt != nil {
-			return RegisterResponse{}, errors.New("name already registered")
-		}
-
-		if errByName != nil {
-
-			// transaction cuma untuk operasi DB
-			err = s.db.Transaction(func(tx *gorm.DB) error {
-				_, err := s.userRepo.Save(payloadNewUser, tx)
-				return err
-			})
-
-			if err != nil {
-				return RegisterResponse{}, fmt.Errorf("failed to create user: %w", err)
-			}
-
-			// generate token & kirim email di luar transaction
-			token, err := helper.GenerateToken(payloadNewUser.UUID, input.Email, role)
-			if err != nil {
-				return RegisterResponse{}, errors.New("generate token failed")
-			}
-
-			baseURL := os.Getenv("URL_DEV")
-			if os.Getenv("GO_ENV") == "production" {
-				baseURL = os.Getenv("URL_PROD")
-			}
-
-			payloadEmail := map[string]interface{}{
-				"name": payloadNewUser.Name,
-				"link": fmt.Sprintf("%s/verify/%s/%s?token=%s", baseURL, role, payloadNewUser.UUID, token),
-			}
-
-			sendEmailHelper := helper.NewSendEmailHelper(s.emailLoggerRepo, s.db)
-			_, err = sendEmailHelper.SendEmail(ctx, input.Email, "Email verification", "verified-user", payloadEmail, payloadNewUser.ID)
-			if err != nil {
-				return RegisterResponse{}, errors.New("send email failed")
-			}
-
-			return RegisterResponse{
-				Message: "Register Success",
-			}, nil
-		}
-
-		err = s.db.Transaction(func(tx *gorm.DB) error {
-			_, err := s.userRepo.Save(payloadNewUser, tx)
-			return err
-		})
-
-		if err != nil {
-			return RegisterResponse{}, fmt.Errorf("failed to create user: %w", err)
-		}
-
+		return RegisterResponse{}, errors.New("register_failed [hash_password]")
 	}
 
-	if checkUserByEmail.EmailVerifiedAt != nil {
-		return RegisterResponse{}, errors.New("Email already registered")
+	payloadNewUser := user.User{
+		UUID:     uuid.New().String(),
+		Name:     input.Name,
+		Email:    input.Email,
+		Password: hashPassword,
+		Role:     role,
 	}
 
-	resendEmailHelper := helper.NewResendEmailHelper(s.emailLoggerRepo, s.db)
-	resultResendEmail, err := resendEmailHelper.ReSendEmail(ctx, checkUserByEmail, input.Email, role)
+	// 4. Jalankan DB Transaction
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Simpan user baru menggunakan instance tx
+		newUser, err := s.userRepo.Save(payloadNewUser, tx)
+		if err != nil {
+			return fmt.Errorf("register_failed [create_user]: %w", err)
+		}
+
+		// Generate token
+		token, err := helper.GenerateToken(payloadNewUser.UUID, input.Email, role)
+		if err != nil {
+			return errors.New("register_failed [generate_token]")
+		}
+
+		baseURL := os.Getenv("URL_DEV")
+		if os.Getenv("GO_ENV") == "production" {
+			baseURL = os.Getenv("URL_PROD")
+		}
+
+		payloadEmail := map[string]interface{}{
+			"name": payloadNewUser.Name,
+			"link": fmt.Sprintf("%s/verify/%s/%s?token=%s", baseURL, role, payloadNewUser.UUID, token),
+		}
+
+		// PENTING: Oper instance `tx` ke email helper agar terikat di transaksi yang sama
+		sendEmailHelper := helper.NewSendEmailHelper(s.emailLoggerRepo, tx)
+		_, err = sendEmailHelper.SendEmail(ctx, input.Email, "Email verification", "verified-user", payloadEmail, newUser.ID)
+		if err != nil {
+			// Jika SendEmail return error di sini, GORM otomatis ROLLBACK pembuatan user!
+			return fmt.Errorf("register_failed [send_email_new]: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return RegisterResponse{}, errors.New("Send Email Failed")
+		return RegisterResponse{}, err
 	}
 
-	if !resultResendEmail.Status {
-		return RegisterResponse{}, errors.New("Send Email Failed")
-	}
-
-	return RegisterResponse{}, nil
+	return RegisterResponse{
+		Message: "Register Success",
+	}, nil
 }
