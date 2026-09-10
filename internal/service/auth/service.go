@@ -19,6 +19,7 @@ type AuthService interface {
 	Login(ctx context.Context, input LoginRequest, role string) (LoginResponse, error)
 	Register(ctx context.Context, input RegisterRequest, role string) (RegisterResponse, error)
 	CheckUser(ctx context.Context, input CheckUserRequest, role string) (CheckUserResponse, error)
+	VerifyEmail(ctx context.Context, input VerifyEmailRequest) (VerifyEmailResponse, error)
 }
 
 type authServiceImpl struct {
@@ -41,6 +42,53 @@ func NewAuthService(
 		emailLoggerRepo: emailLoggerRepo,
 	}
 }
+
+func (s *authServiceImpl) VerifyEmail(ctx context.Context, input VerifyEmailRequest) (VerifyEmailResponse, error) {
+
+	decodeToken, err := helper.DecodeToken(input.TokenVerify)
+	if err != nil {
+		return VerifyEmailResponse{}, errors.New("verify_email_failed [invalid_token]")
+	}
+
+	if(decodeToken.ExpiresAt.Before(time.Now())) {
+		return VerifyEmailResponse{}, errors.New("verify_email_failed [expired_token]")
+	}
+
+	filterFindOneBy := user.User{
+		UUID: decodeToken.UUID,
+		Role: input.Role,
+	}
+
+	userData, err := s.userRepo.FindOneBy(ctx, filterFindOneBy)
+	if err != nil {
+		return VerifyEmailResponse{}, errors.New("verify_email_failed [user_not_found]")
+	}
+
+	if userData.EmailVerifiedAt != nil {
+		return VerifyEmailResponse{}, errors.New("verify_email_failed [email_verified]")
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().Unix()
+
+		_, err := s.userRepo.UpdateByID(user.User{ID: userData.ID, EmailVerifiedAt: &now}, tx)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	generateToken, err := helper.GenerateToken(userData.UUID, userData.Email, input.Role)
+	if err != nil {
+		return VerifyEmailResponse{}, errors.New("verify_email_failed [generate_token]")
+	}
+
+
+	return VerifyEmailResponse{
+		Token: generateToken,
+	}, nil
+}
+
 
 func (s *authServiceImpl) CheckUser(ctx context.Context, input CheckUserRequest, role string) (CheckUserResponse, error) {
 	filterFindOneBy := user.User{

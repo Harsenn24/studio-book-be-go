@@ -73,3 +73,20 @@ func (h *AuthHandler) CheckUserHandler(c *gin.Context) {
 	}
 	helper.SendSuccess(c, http.StatusOK, "StatusOk", response)
 }
+
+func (h *AuthHandler) VerifyEmailHandler(c *gin.Context) {
+	var input VerifyEmailRequest
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		helper.SendError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response, err := h.authService.VerifyEmail(c.Request.Context(), input)
+	if err != nil {
+		helper.SendError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	helper.SendSuccess(c, http.StatusOK, "StatusOk", response)
+}
+

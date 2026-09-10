@@ -8,5 +8,6 @@ func MapUserRoutes(router *gin.Engine, config RouterConfig) {
 		userRoutes.POST("/auth/login", config.AuthHandler.LoginHandler)
 		userRoutes.POST("/auth/register", config.AuthHandler.RegisterHandler)
 		userRoutes.POST("/auth/check-user", config.AuthHandler.CheckUserHandler)
+		userRoutes.POST("/auth/verify-email", config.AuthHandler.VerifyEmailHandler)
 	}
 }

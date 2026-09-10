@@ -15,6 +15,7 @@ type UserRepository interface {
 	Save(u User, tx *gorm.DB) (User, error)
 	FindByEmail(email string) (User, error)
 	FindOneBy(ctx context.Context, filter User) (User, error)
+	UpdateByID(u User, tx *gorm.DB) (User, error)
 }
 
 type userRepositoryImpl struct {
@@ -101,4 +102,21 @@ func (r *userRepositoryImpl) FindByEmail(email string) (User, error) {
 	}
 
 	return user, nil
+}
+
+func (r *userRepositoryImpl) UpdateByID(u User, tx *gorm.DB) (User, error) {
+	now := time.Now().Unix()
+	u.UpdatedAt = now
+
+	db := r.db
+	if tx != nil {
+		db = tx
+	}
+
+	err := db.Model(&u).Where("id = ?", u.ID).Updates(&u).Error
+	if err != nil {
+		return User{}, err
+	}
+
+	return u, nil
 }

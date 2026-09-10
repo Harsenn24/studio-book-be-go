@@ -27,5 +27,14 @@ type CheckUserRequest struct {
 }
 
 type CheckUserResponse struct {
-	Message string      `json:"message"`
+	Message string `json:"message"`
+}
+
+type VerifyEmailRequest struct {
+	TokenVerify string `json:"token_verify" binding:"required"`
+	Role        string `json:"role" binding:"required"`
+}
+
+type VerifyEmailResponse struct {
+	Token string `json:"token"`
 }
